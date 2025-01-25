@@ -3,7 +3,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 
-DATABASE_URL = ""
+DATABASE_URL = "
 
 # Crear motor de SQLAlchemy
 engine = create_engine(DATABASE_URL, pool_size=3, max_overflow=0)
