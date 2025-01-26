@@ -1,11 +1,12 @@
 import uuid
+from decimal import Decimal
 from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from typing import Annotated
 from config.db import engine, SessionLocal
-from models.global_models import Usuario, OpcionesApuestaJuegos, Apuesta, Juegos
-from schemas.usuario import UsuarioBaseModel
+from models.global_models import Usuario, OpcionesApuestaJuegos, Apuesta, Juegos, ApuestaUsuario
+from schemas.usuario import UsuarioBaseModel, ApuestaUsuarioBaseModel
 
 router_usuario = APIRouter()
 
@@ -46,19 +47,36 @@ async def create_usuarios(usuario: UsuarioBaseModel, db:db_dependency):
 async def consultar_usuario_por_uuid(uuid: str, db: db_dependency):
     try:
         # Consultamos el usuario en la base de datos
-        registro = db.query(Usuario).filter(Usuario.uuid == uuid).first()
+        usuario = db.query(Usuario).filter(Usuario.uuid == uuid).first()
 
-        if not registro:
+        if not usuario:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Usuario con UUID {uuid} no encontrado."
             )
 
-        # Convertimos el registro en un diccionario y excluimos el campo 'id'
+        # Consultamos el historial de apuestas del usuario
+        historial_apuestas = []
+        apuestas_usuario = db.query(ApuestaUsuario).filter(ApuestaUsuario.id_usuario == usuario.id).all()
+
+        for apuesta_usuario in apuestas_usuario:
+            apuesta = {
+                "codigo_sala": apuesta_usuario.apuesta.codigo_sala,
+                "monto_apostado": apuesta_usuario.monto_apostado,
+                "opcion_apuesta": apuesta_usuario.opcion_apuesta_rel.nombre_opcion,
+                "is_gano": apuesta_usuario.is_gano,
+                "fecha": apuesta_usuario.created_at
+            }
+            historial_apuestas.append(apuesta)
+
+        # Convertimos el registro de usuario en un diccionario y excluimos el campo 'id'
         usuario_dict = {
-            key: value for key, value in registro.__dict__.items() 
+            key: value for key, value in usuario.__dict__.items() 
             if key != 'id' and not key.startswith('_')
         }
+
+        # Agregamos el historial de apuestas al diccionario del usuario
+        usuario_dict["historial_apuestas"] = historial_apuestas
 
         return usuario_dict
     except Exception as e:
@@ -67,6 +85,7 @@ async def consultar_usuario_por_uuid(uuid: str, db: db_dependency):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al consultar el usuario: {str(e)}"
         )
+
         
 @router_usuario.get('/sala/{codigo_sala}', status_code=status.HTTP_200_OK)
 async def consultar_sala_por_codigo(codigo_sala: str, db: db_dependency):
@@ -119,6 +138,94 @@ async def consultar_sala_por_codigo(codigo_sala: str, db: db_dependency):
         sala_dict["opciones_apuesta"] = opciones_dict
 
         return sala_dict
+    
+    except Exception as e:
+        # Capturamos cualquier error inesperado
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al consultar la sala: {str(e)}"
+        )
+
+@router_usuario.post('/sala/apostar', status_code=status.HTTP_201_CREATED)
+async def entrar_en_apuesta(apuesta_usuario: ApuestaUsuarioBaseModel, db: db_dependency):
+    try:
+        # VALIDACIONES -----
+        
+        # 1. Verificar si el usuario existe
+        usuario = db.query(Usuario).filter(Usuario.uuid == apuesta_usuario.uuid_usuario).first()
+        if not usuario:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Usuario no encontrado"
+            )
+
+        # 2. Verificar si la sala existe
+        apuesta = db.query(Apuesta).filter(Apuesta.codigo_sala == apuesta_usuario.codigo_sala, Apuesta.is_abierta == True).first()
+        if not apuesta:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Sala no encontrada o ya se ha cerrado"
+            )
+            
+        # 3. Verificar si el usuario ya tiene una apuesta en esa sala
+        apuesta_existente = db.query(ApuestaUsuario).join(Apuesta).filter(
+            ApuestaUsuario.id_usuario == usuario.id,
+            Apuesta.codigo_sala == apuesta_usuario.codigo_sala
+        ).first()
+        
+        if apuesta_existente:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Ya has realizado una apuesta en esta sala"
+            )
+
+        # 4. Verificar si la opción de apuesta es válida
+        opcion_apuesta = db.query(OpcionesApuestaJuegos).filter(OpcionesApuestaJuegos.id == apuesta_usuario.opcion_apuesta).first()
+        if not opcion_apuesta:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Opción de apuesta no válida"
+            )
+
+        # 5. Verificar si el monto apostado es mayor que 200
+        if apuesta_usuario.monto_apuesta <= 200:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El monto de la apuesta debe ser mayor a 200"
+            )
+            
+        # 6. Verificar si el monto apostado NO es mayor al saldo actual
+        if apuesta_usuario.monto_apuesta > usuario.saldo_actual:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El monto de la apuesta es superior al disponible"
+            )
+            
+        # REGISTRO Y CONFIRMACIÓN DE LA APUESTA ---
+        nueva_apuesta_usuario = ApuestaUsuario(
+            id_usuario=usuario.id,
+            id_apuesta=apuesta.id,
+            opcion_apuesta=apuesta_usuario.opcion_apuesta,
+            monto_apostado=apuesta_usuario.monto_apuesta,
+            is_gano=False 
+        )
+        
+        # Restar el monto apostado del saldo actual del usuario
+        usuario.saldo_actual -= Decimal(apuesta_usuario.monto_apuesta)
+        
+        # Agregar el registro de la apuesta y actualizar el saldo
+        db.add(nueva_apuesta_usuario)
+        db.commit()
+
+        return {"message": "Apuesta registrada correctamente"}
+    
+    except SQLAlchemyError as e:
+        db.rollback()  # Hacer rollback en caso de error en la base de datos
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al procesar la apuesta: {str(e)}"
+        )
+        
     except Exception as e:
         # Capturamos cualquier error inesperado
         raise HTTPException(

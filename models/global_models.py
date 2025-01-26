@@ -13,6 +13,8 @@ class Usuario(Base):
     created_at = Column(TIMESTAMP, nullable=False, server_default=func.current_timestamp())  # Timestamp gestionado por la base de datos
     updated_at = Column(TIMESTAMP, nullable=False, server_default=func.current_timestamp(), onupdate=func.current_timestamp())
     
+    apuestas_usuario = relationship("ApuestaUsuario", back_populates="usuario")
+    
 class Juegos(Base):
     __tablename__ = 'Juegos'
 
@@ -34,6 +36,7 @@ class OpcionesApuestaJuegos(Base):
     updated_at = Column(TIMESTAMP, server_default=func.current_timestamp(), onupdate=func.current_timestamp(), nullable=True)
 
     juego = relationship("Juegos", back_populates="opciones_apuesta")
+    apuestas_usuario = relationship("ApuestaUsuario", back_populates="opcion_apuesta_rel")
 
 class Apuesta(Base):
     __tablename__ = 'Apuesta'
@@ -48,6 +51,25 @@ class Apuesta(Base):
 
     juego = relationship("Juegos", back_populates="apuestas")
     opcion_apuesta = relationship("OpcionesApuestaJuegos")
+    apuestas_usuario = relationship("ApuestaUsuario", back_populates="apuesta")
+    
+class ApuestaUsuario(Base):
+    __tablename__ = 'Apuesta_Usuario'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    id_usuario = Column(Integer, ForeignKey('Usuario.id', ondelete="CASCADE", onupdate="CASCADE"), nullable=False)
+    id_apuesta = Column(Integer, ForeignKey('Apuesta.id', ondelete="CASCADE", onupdate="CASCADE"), nullable=False)
+    opcion_apuesta = Column(Integer, ForeignKey('Opciones_Apuesta_Juegos.id', ondelete="RESTRICT", onupdate="CASCADE"), nullable=False)
+    monto_apostado = Column(DECIMAL(10, 2), nullable=False)
+    is_gano = Column(Boolean, nullable=False)
+    monto_ganado = Column(DECIMAL(10,2), nullable=True)
+    created_at = Column(TIMESTAMP, server_default=func.current_timestamp(), nullable=True)
+    updated_at = Column(TIMESTAMP, server_default=func.current_timestamp(), onupdate=func.current_timestamp(), nullable=True)
+
+    # Relaciones
+    usuario = relationship("Usuario", back_populates="apuestas_usuario")
+    apuesta = relationship("Apuesta", back_populates="apuestas_usuario")
+    opcion_apuesta_rel = relationship("OpcionesApuestaJuegos", back_populates="apuestas_usuario")
 
 # Crear el esquema en la base de datos
 Base.metadata.create_all(engine)
