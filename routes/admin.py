@@ -7,7 +7,7 @@ from typing import Annotated
 from config.db import engine, SessionLocal
 from models.global_models import Apuesta, OpcionesApuestaJuegos, ApuestaUsuario, Usuario
 from schemas.admin import CrearSalaBaseModel, CerrarSalaBaseModel
-from prolog.evento_ruleta import tirar_ruleta, ganancia
+from prolog.evento_ruleta import tirar_ruleta, ganancia, generar_codigo_sala
 
 
 router_admin = APIRouter(
@@ -29,10 +29,12 @@ db_dependency = Annotated[Session, Depends(get_db)]
 async def crear_sala(sala: CrearSalaBaseModel,db: db_dependency):
     try:
         
-        db_registro = Apuesta(codigo_sala=sala.codigo_sala, id_juego=sala.id_juego)
+        codigo_sala = generar_codigo_sala()
+
+        db_registro = Apuesta(codigo_sala=codigo_sala, id_juego=sala.id_juego)
         db.add(db_registro)
         db.commit()
-        return {"status": "OK"}
+        return {"status": "OK", "codigo_sala": codigo_sala}
     
     except Exception as e:
         db.rollback()
@@ -105,4 +107,4 @@ async def cerrar_sala(sala: CerrarSalaBaseModel, db: db_dependency):
 
 @router_admin.get("/test")
 def prueba(db: db_dependency):
-    return tirar_ruleta()
+    return generar_codigo_sala()

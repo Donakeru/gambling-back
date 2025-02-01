@@ -1,4 +1,5 @@
 import random
+import string
 
 # Función para tirar la ruleta y obtener un color basado en las probabilidades
 def tirar_ruleta():
@@ -18,3 +19,7 @@ def determinar_color(numero):
         
 # Definir la función lambda para calcular la ganancia
 ganancia = lambda A_i, A_total_color, A_total_ruleta: (A_i / A_total_color) * A_total_ruleta
+
+# Definir los codigos de salas de apuesta
+def generar_codigo_sala():
+    return ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(6))

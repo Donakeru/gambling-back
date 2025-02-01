@@ -60,9 +60,13 @@ async def consultar_usuario_por_uuid(uuid: str, db: db_dependency):
         apuestas_usuario = db.query(ApuestaUsuario).filter(ApuestaUsuario.id_usuario == usuario.id).all()
 
         for apuesta_usuario in apuestas_usuario:
+            info_apuesta = db.query(Apuesta).filter(Apuesta.id == apuesta_usuario.id_apuesta).first()
+            info_juego = db.query(Juegos).filter(Juegos.id == info_apuesta.id_juego).first()
             apuesta = {
                 "codigo_sala": apuesta_usuario.apuesta.codigo_sala,
                 "monto_apostado": apuesta_usuario.monto_apostado,
+                "is_sala_abierta": info_apuesta.is_abierta,
+                "juego": info_juego.nombre_juego,
                 "opcion_apuesta": apuesta_usuario.opcion_apuesta_rel.nombre_opcion,
                 "is_gano": apuesta_usuario.is_gano,
                 "fecha": apuesta_usuario.created_at
