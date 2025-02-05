@@ -1,6 +1,13 @@
 # Proyecto final Modelos de programación II
 # Simulador de Gambling
 
+
+Este proyecto es el Backend del trabajo final de la materia "Modelos de Programación 2". Proporciona la lógica de negocio y la gestión de datos para la aplicación de gambling en línea.
+
+Está desarrollado con FastAPI y utiliza SQLAlchemy para la gestión de la base de datos. El backend maneja la creación y consulta de usuarios, apuestas y salas de juego. Además, incorpora Prolog para la validación de reglas de apuestas y la determinación de resultados.
+
+El sistema cuenta con autenticación de usuarios, validaciones de apuestas y manejo eficiente de transacciones para garantizar la integridad de los datos.
+
 ## Participantes
 - Luis Miguel Viuche Madroñero (20212020082)
 - Daniel Alejandro Chavez Bustos (20212020109)
