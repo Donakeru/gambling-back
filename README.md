@@ -45,6 +45,10 @@ backend/
 - **`schemas/admin.py`**: Modelos Pydantic para la creación y cierre de salas.
 - **`schemas/usuario.py`**: Modelos Pydantic para validación de usuarios y apuestas.
 
+
+![Diagrama back](assets/diagramaback.jpeg)
+
+
 ## Instalación y Configuración
 
 1. Clonar el repositorio:
