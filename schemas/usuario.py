@@ -8,3 +8,9 @@ class ApuestaUsuarioBaseModel(BaseModel):
     codigo_sala: str
     opcion_apuesta: int
     monto_apuesta: float
+
+class SimulacionApuestaUsuarioBaseModel(BaseModel):
+    uuid_usuario: str
+    codigo_sala: str
+    opcion_apuesta: int
+    monto_apuesta: float

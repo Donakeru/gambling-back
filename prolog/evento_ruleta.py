@@ -23,3 +23,6 @@ ganancia = lambda A_i, A_total_color, A_total_ruleta: (A_i / A_total_color) * A_
 # Definir los codigos de salas de apuesta
 def generar_codigo_sala():
     return ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(6))
+
+# Definir la función lambda para calcular simular el multiplicador de ganancia
+multiplicador_ganancia = lambda A_i, A_total_color, A_total_ruleta: round((A_total_ruleta + A_i) / (A_total_color + A_i), 2) if (A_total_color + A_i) != 0 else 0

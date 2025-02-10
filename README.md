@@ -23,7 +23,6 @@ Este es el backend de **Let's Go Gambling\~!**, una aplicación de gambling desa
 - **Python**
 - **FastAPI** - Framework para construir APIs rápidas y eficientes.
 - **SQLAlchemy** - ORM para manejar la base de datos.
-- **SQLite** (por defecto) - Base de datos utilizada.
 - **Pydantic** - Para validación de datos en modelos.
 
 ## Estructura del Proyecto
@@ -58,6 +57,8 @@ backend/
 
 ## Instalación y Configuración
 
+Para esto es importante tener instalado Poetry
+
 1. Clonar el repositorio:
 
    ```sh
@@ -65,24 +66,17 @@ backend/
    cd lets-go-gambling/backend
    ```
 
-2. Crear y activar un entorno virtual:
+2. Instalar las dependencias desde Poetry
 
-   ```sh
-   python -m venv venv
-   source venv/bin/activate  # En Windows: venv\Scripts\activate
-   ```
+```sh
+   poetry install
+```
 
-3. Instalar dependencias:
+2. Ejecutar el proyecto
 
-   ```sh
-   pip install -r requirements.txt
-   ```
-
-4. Ejecutar el servidor FastAPI:
-
-   ```sh
-   uvicorn main:app --reload
-   ```
+```sh
+   poetry run uvicorn gambling.main:app --reload
+```
 
 ## Endpoints Principales
 
@@ -96,6 +90,7 @@ backend/
 
 - **`GET /sala/{codigo_sala}`** - Obtiene información de una sala por su código.
 - **`POST /sala/apostar`** - Permite a un usuario ingresar a una sala y realizar una apuesta.
+- **`POST /sala/simular`** - Permite a un usuario ingresar a una sala y realizar una apuesta.
 
 ## Modelos de Datos
 
@@ -118,6 +113,16 @@ class ApuestaUsuarioBaseModel(BaseModel):
     monto_apuesta: float
 ```
 
+#### **SimulacionApuestaUsuarioBaseModel**
+
+```python
+class SimulacionApuestaUsuarioBaseModel(BaseModel):
+    uuid_usuario: str
+    codigo_sala: str
+    opcion_apuesta: int
+    monto_apuesta: float
+```
+
 ### `schemas/admin.py`
 
 #### **CrearSalaBaseModel**
@@ -133,6 +138,7 @@ class CrearSalaBaseModel(BaseModel):
 class CerrarSalaBaseModel(BaseModel):
     codigo_sala: str
 ```
+
 
 ## Consideraciones Adicionales
 

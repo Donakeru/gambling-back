@@ -3,10 +3,11 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.sql import func
 from typing import Annotated
 from config.db import engine, SessionLocal
 from models.global_models import Usuario, OpcionesApuestaJuegos, Apuesta, Juegos, ApuestaUsuario
-from schemas.usuario import UsuarioBaseModel, ApuestaUsuarioBaseModel
+from schemas.usuario import UsuarioBaseModel, ApuestaUsuarioBaseModel, SimulacionApuestaUsuarioBaseModel
 
 router_usuario = APIRouter()
 
@@ -92,9 +93,10 @@ async def consultar_usuario_por_uuid(uuid: str, db: db_dependency):
 
         
 @router_usuario.get('/sala/{codigo_sala}', status_code=status.HTTP_200_OK)
-async def consultar_sala_por_codigo(codigo_sala: str, db: db_dependency):
+async def consultar_sala_por_codigo(codigo_sala: str, db: Session = Depends(get_db)):
+
     try:
-        # Consultamos el registro de la sala en la base de datos
+        # Consultar la sala por código
         registro = db.query(Apuesta).filter(Apuesta.codigo_sala == codigo_sala).first()
 
         if not registro:
@@ -103,14 +105,13 @@ async def consultar_sala_por_codigo(codigo_sala: str, db: db_dependency):
                 detail=f"La sala {codigo_sala} no se ha encontrado."
             )
             
-        # Verificar si la sala ya está cerrada
         if not registro.is_abierta:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="La sala ya está cerrada"
             )
 
-        # Obtener el juego asociado a la sala
+        # Obtener el juego asociado
         juego = db.query(Juegos).filter(Juegos.id == registro.id_juego).first()
 
         if not juego:
@@ -119,35 +120,135 @@ async def consultar_sala_por_codigo(codigo_sala: str, db: db_dependency):
                 detail="El juego asociado a la sala no se ha encontrado."
             )
 
-        # Obtener las opciones de apuesta asociadas al juego
+        # Obtener las opciones de apuesta
         opciones_apuesta = db.query(OpcionesApuestaJuegos).filter(
             OpcionesApuestaJuegos.id_Juego == juego.id
         ).all()
 
-        # Convertimos las opciones a una lista de diccionarios con solo id y nombre_opcion
         opciones_dict = [
             {"id": opcion.id, "nombre_opcion": opcion.nombre_opcion}
             for opcion in opciones_apuesta
         ]
-        
+
+        # Obtener cantidad de jugadores distintos y total apostado
+        apuestas_info = db.query(
+            func.count(ApuestaUsuario.id_usuario.distinct()).label("cantidad_jugadores"),
+            func.sum(ApuestaUsuario.monto_apostado).label("total_apostado")
+        ).filter(ApuestaUsuario.id_apuesta == registro.id).first()
+
+        cantidad_jugadores = apuestas_info.cantidad_jugadores or 0
+        total_apostado = float(apuestas_info.total_apostado or 0.0)
+
         sala_dict = {
             key: value for key, value in registro.__dict__.items()
             if key != 'id' and not key.startswith('_') and key != 'id_juego' and key != 'resultado'
         }
 
-        # Añadimos el nombre del juego al diccionario de la sala
         sala_dict["nombre_juego"] = juego.nombre_juego
-
-        # Añadimos las opciones al diccionario de la sala
         sala_dict["opciones_apuesta"] = opciones_dict
+        sala_dict["cantidad_jugadores"] = cantidad_jugadores
+        sala_dict["total_apostado"] = total_apostado
 
         return sala_dict
     
     except Exception as e:
-        # Capturamos cualquier error inesperado
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al consultar la sala: {str(e)}"
+        )
+    
+@router_usuario.post('/sala/simular', status_code=status.HTTP_200_OK)
+async def simular_apuesta(apuesta_usuario: SimulacionApuestaUsuarioBaseModel, db: db_dependency):
+    try:
+        # VALIDACIONES -----
+        
+        # 1. Verificar si el usuario existe
+        usuario = db.query(Usuario).filter(Usuario.uuid == apuesta_usuario.uuid_usuario).first()
+        if not usuario:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Usuario no encontrado"
+            )
+
+        # 2. Verificar si la sala existe
+        apuesta = db.query(Apuesta).filter(Apuesta.codigo_sala == apuesta_usuario.codigo_sala, Apuesta.is_abierta == True).first()
+        if not apuesta:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Sala no encontrada o ya se ha cerrado"
+            )
+            
+        # 3. Verificar si el usuario ya tiene una apuesta en esa sala
+        apuesta_existente = db.query(ApuestaUsuario).join(Apuesta).filter(
+            ApuestaUsuario.id_usuario == usuario.id,
+            Apuesta.codigo_sala == apuesta_usuario.codigo_sala
+        ).first()
+        
+        if apuesta_existente:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Ya has realizado una apuesta en esta sala"
+            )
+
+        # 4. Verificar si la opción de apuesta es válida
+        opcion_apuesta = db.query(OpcionesApuestaJuegos).filter(OpcionesApuestaJuegos.id == apuesta_usuario.opcion_apuesta).first()
+        if not opcion_apuesta:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Opción de apuesta no válida"
+            )
+
+        # 5. Verificar si el monto apostado es mayor que 200
+        if apuesta_usuario.monto_apuesta <= 200:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El monto de la apuesta debe ser mayor a 200"
+            )
+            
+        # 6. Verificar si el monto apostado NO es mayor al saldo actual
+        if apuesta_usuario.monto_apuesta > usuario.saldo_actual:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El monto de la apuesta es superior al disponible"
+            )
+        
+        # SIMULACION -------
+    
+        # Realizar la consulta para obtener la suma de los puntos apostados por los ganadores
+        suma_valores_ganadores = db.query(func.sum(ApuestaUsuario.monto_apostado)).filter(
+            ApuestaUsuario.id_apuesta == apuesta.id,
+            ApuestaUsuario.opcion_apuesta == opcion_apuesta.id
+        ).scalar()
+    
+        # Realizar la consulta para obtener la suma de los puntos apostados por todos los jugadores
+        suma_valores_totales = db.query(func.sum(ApuestaUsuario.monto_apostado)).filter(
+            ApuestaUsuario.id_apuesta == apuesta.id
+        ).scalar()
+            
+        if not suma_valores_totales or not suma_valores_ganadores :
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="No hay los datos suficientes para generar una simulación."
+            )
+        
+        multiplicador = multiplicador_ganancia(apuesta_usuario.monto_apuesta, float(suma_valores_ganadores), float(suma_valores_totales))
+
+        print(multiplicador)
+
+        return {"multiplicador": multiplicador}
+    
+    except SQLAlchemyError as e:
+        db.rollback()  # Hacer rollback en caso de error en la base de datos
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al procesar la apuesta: {str(e)}"
+        )
+        
+    except Exception as e:
+        # Capturamos cualquier error inesperado
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al simular la apuesta: {str(e)}"
         )
 
 @router_usuario.post('/sala/apostar', status_code=status.HTTP_201_CREATED)
